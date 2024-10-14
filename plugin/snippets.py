@@ -25,6 +25,20 @@ def getValue(dbName, key):
     conn.close()
     return value
 
+def searchValues(dbName, key):
+    value = {}
+    conn = sqlite3.connect(dbName)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT key, value FROM snippets WHERE key LIKE ? ORDER BY key = ? DESC, key LIKE ? DESC LIMIT 10", ('%' + key + '%', key, key + '%'))
+    result = cursor.fetchall()
+    if result:
+        value = result
+    else:
+        value = ""
+    conn.close()
+    return value
+
 def saveValue(dbName, key, value):
     conn = sqlite3.connect(dbName)
     cursor = conn.cursor()
@@ -43,6 +57,11 @@ def deleteValue(dbName, key):
 def copy2clip(dbName, value):
     """Put snippets into clipboard."""
     pyperclip.copy(value)
+
+def summaryValue(value, length=24):
+    """Return a summary of the value."""
+    displayValue = value.strip().replace("\n", " ").replace("\r", " ")
+    return displayValue[:length] + "..." if len(displayValue) > length else displayValue
 
 class Snippets(FlowLauncher):
 
@@ -63,17 +82,19 @@ class Snippets(FlowLauncher):
                         "ContextData": [key, value],
                         "JsonRPCAction": {"method": "save", "parameters": [key.strip(), value.strip()], }})
                 else:
-                    value = getValue(self.dbName, query.strip())
-                    if len(value) != 0:
-                        results.append({  
-                            "Title": "⭐ " + query.strip(),
-                            "SubTitle": "[Snippet] Copy to clipboard",
+                    values = searchValues(self.dbName, query.strip())
+                    for data in values:
+                        key, value = data
+                        results.append({
+                            "Title": "⭐ " + key,
+                            "SubTitle": summaryValue(value) + " (Enter to copy, Shift+Enter to delete)",
                             "IcoPath": "assets/snippets.png",
-                            "ContextData": [query.strip(), value],
+                            "ContextData": [key, value],
                             "JsonRPCAction": {"method": "copy", "parameters": [value], }})
-                    else:
+
+                    if query.strip() not in [x[0] for x in values]:
                         clipboardValue = pyperclip.paste()
-                        displayValue = (clipboardValue[:16] + "...") if len(clipboardValue) > 16 else clipboardValue
+                        displayValue = summaryValue(clipboardValue, 36)
                         if len(clipboardValue) != 0:
                             results.append({
                                 "Title": "Save from clipboard",
@@ -99,11 +120,6 @@ class Snippets(FlowLauncher):
                         "SubTitle": "Key=" + data[0] + ", Value=" + data[1],
                         "IcoPath": "assets/snippets.png",
                         "JsonRPCAction": {"method": "delete", "parameters": [data[0]], }})
-        results.append({
-                "Title": "Save/Update Code Snippet",
-                "SubTitle": "Key=" + data[0] + ", Value=" + data[1],
-                "IcoPath": "assets/snippets.png", 
-                "JsonRPCAction": {"method": "save", "parameters": [data[0], data[1]], }})
         return results
 
     def copy(self, value):
